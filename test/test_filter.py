@@ -4,13 +4,13 @@
 # @FileName : test_filter.py
 # @Software : PyCharm
 from unittest import TestCase
-from src.filter import gaussian_filter
-from src.utils import show_img
+from image_filters import gaussian_filter
+from utils import show_img
 import cv2
 
 
 class TestFilterCase(TestCase):
-    file_path = "../sample_data/DSC00315.JPG"
+    file_path = "../sample_data/uav/DSC00315.JPG"
     img_bgr = cv2.imread(file_path)
     img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
     img_gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
