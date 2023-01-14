@@ -50,21 +50,7 @@ def mutual_information_match(template, dst_image):
     return mi, max_match_value, match_location
 
 
-def mutual_inf(template: np.ndarray, dst: np.ndarray):
-    template = template.reshape(-1)
-    dst = dst.reshape(-1)
-    size = template.shape[-1]
-    assert template.shape == dst.shape
-    # 获取两个图像的直方图
-    px = np.histogram(template, 256, (0, 255))[0] / size
-    py = np.histogram(dst, 256, (0, 255))[0] / size
-    hx = - np.sum(px * np.log(px + 1e-8))
-    hy = - np.sum(py * np.log(py + 1e-8))
-    hxy = np.histogram2d(template, dst, 256, [[0, 255], [0, 255]])[0]
-    hxy /= (1.0 * size)
-    hxy = - np.sum(hxy * np.log(hxy + 1e-8))
-    r = hx + hy - hxy
-    return r
+
 
 
 if __name__ == '__main__':
