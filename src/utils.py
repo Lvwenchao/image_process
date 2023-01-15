@@ -19,3 +19,4 @@ def show_img(imgs, titles):
     plt.title(titles[1])
     plt.xticks([]), plt.yticks([])
     plt.show()
+
