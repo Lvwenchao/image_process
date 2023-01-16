@@ -9,34 +9,40 @@ import cv2
 import matplotlib.pyplot as plt
 import numpy as np
 
-from utils import show_image
+from utils import *
 
 
 class Matcher(object):
 
-    def __init__(self, method="ssd", type="distance"):
+    def __init__(self, method="ssd"):
         """
         基于灰度的图像///
         :param method:
-        :param type:
+
         """
-        self.method = method
         self._function = {
             "ssd": self.ssd,
             "mad": self.mad,
             "sad": self.sad,
-            "ncc": self.method,
+            "ncc": self.ncc,
             "mi": self.mutual_inf
         }
+        self.method = self._function[method]
 
-    def ncc(self,):
+    def ncc(self, template, dst_image):
+        tem_sub_mean = template - np.mean(template)
+        dst_sub_mean = dst_image - np.mean(dst_image)
+        ncc = np.sum(tem_sub_mean * dst_sub_mean) / (np.std(template) * np.std(dst_image))
+        return ncc
 
-    def match(self, template, dst_image):
+    def match(self, template, dst_image, location_type="max", show=True):
         """
         基于误差匹配
+        :param show:
         :param self:
         :param template:
         :param dst_image:
+        :param location_type: 根据相似度量和距离度量返回最大值或者最小值，max or min
         :return:
         """
         if len(template.shape) > 2:
@@ -46,24 +52,20 @@ class Matcher(object):
         src_h, src_w = template.shape
         dst_h, dst_w = dst_image.shape
         # 最小处所在的ssd
-        min_value = sys.maxsize
-        # min ssd location
-        min_x, min_y = dst_w, dst_h
         match_value = np.zeros((dst_h - src_h + 1, dst_w - src_w + 1), np.float32)
         for i in range(0, dst_h - src_h + 1):
             for j in range(0, dst_w - src_w + 1):
                 dst_patch = dst_image[i:i + src_h, j:j + src_w]
-                temp = np.sum(np.square(dst_patch - template))
+                temp = self.method(template, dst_patch)
                 match_value[i, j] = temp
-                # 获取最小ssd
-                if temp < min_value:
-                    min_value = temp
-                    min_x, min_y = j, i
-        min_location = np.asarray([[min_x, min_y], [min_x + src_w, min_y],
-                                   [min_x + src_w, min_y + src_w], [min_x, min_y + src_w]],
-                                  dtype=np.int32)
-        print("match_score:{}\npoints:{}".format(str(min_value), min_location))
-        return match_value, min_value, min_location
+        if location_type == "max":
+            match_location = np.where(match_value == match_value.max())
+        else:
+            match_location = np.where(match_value == match_value.min())
+        match_location = np.asarray(match_location).squeeze()
+        y, x = match_location
+        match_pts = np.asarray([[x, y], [x + src_w, y], [x + src_w, y + src_h], [x, y + src_h]])
+        return match_value, match_pts
 
     def ssd(self, template, dst):
         """
@@ -111,9 +113,15 @@ class Matcher(object):
 
 
 if __name__ == '__main__':
+    # load data
     dst_image = cv2.imread("../sample_data/uav/DSC00315.JPG")
     src_image = cv2.imread("../sample_data/uav/DSC00315_patch.png")
-    match_score, best_score, match_pts = distance_match(src_image, dst_image)
+    dst_image_gray = convert_to_gray(dst_image)
+    src_image_gray = convert_to_gray(src_image)
+    match_agent = Matcher()
+
+    # match
+    match_score, match_pts = match_agent.match(src_image_gray, dst_image_gray, location_type="min")
     min_location = match_pts.reshape((1, 4, 2))
     show_location = cv2.polylines(dst_image.copy(), min_location, isClosed=True, color=(255, 0, 0))
     ssd = cv2.normalize(match_score, match_score, alpha=0, beta=255, norm_type=cv2.NORM_MINMAX, dtype=cv2.CV_8U)
