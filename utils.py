@@ -80,7 +80,7 @@ def gaussian_filter(img, sigma=1.3, K=3):
     return out
 
 
-def gaussian_filter_cv(img, sigma=1.3, K=3):
+def gaussian_filter_cv(img, sigma=-1, K=3):
     out = cv2.GaussianBlur(img, (K, K), sigma)
     return out
 
