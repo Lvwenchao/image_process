@@ -4,7 +4,7 @@
 # @FileName : canny.py
 # @Software : PyCharm
 import cv2
-from filter import gaussian_filter
+from utils import gaussian_filter
 import numpy as np
 
 
