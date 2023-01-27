@@ -35,20 +35,15 @@ class Matcher(object):
         ncc = np.sum(tem_sub_mean * dst_sub_mean) / (np.std(template) * np.std(dst_image))
         return ncc
 
-    def match(self, template, dst_image, location_type="max", show=True):
+    def match(self, template, dst_image, location_type="max"):
         """
         基于误差匹配
-        :param show:
         :param self:
         :param template:
         :param dst_image:
         :param location_type: 根据相似度量和距离度量返回最大值或者最小值，max or min
         :return:
         """
-        if len(template.shape) > 2:
-            template = cv2.cvtColor(template, cv2.COLOR_BGR2GRAY)
-        if len(dst_image.shape) > 2:
-            dst_image = cv2.cvtColor(dst_image, cv2.COLOR_BGR2GRAY)
         src_h, src_w = template.shape
         dst_h, dst_w = dst_image.shape
         # 最小处所在的ssd
@@ -112,20 +107,3 @@ class Matcher(object):
         return np.sum(np.abs(template - dst))
 
 
-if __name__ == '__main__':
-    # load data
-    dst_image = cv2.imread("../sample_data/uav/DSC00315.JPG")
-    src_image = cv2.imread("../sample_data/uav/DSC00315_patch.png")
-    dst_image_gray = convert_to_gray(dst_image)
-    src_image_gray = convert_to_gray(src_image)
-    match_agent = Matcher()
-
-    # match
-    match_score, match_pts = match_agent.match(src_image_gray, dst_image_gray, location_type="min")
-    min_location = match_pts.reshape((1, 4, 2))
-    show_location = cv2.polylines(dst_image.copy(), min_location, isClosed=True, color=(255, 0, 0))
-    ssd = cv2.normalize(match_score, match_score, alpha=0, beta=255, norm_type=cv2.NORM_MINMAX, dtype=cv2.CV_8U)
-    show_image((3, 1, 1), show_location)
-    show_image((3, 1, 2), src_image)
-    show_image((3, 1, 3), ssd)
-    plt.show()
