@@ -191,7 +191,7 @@ class SIFT(object):
         :return:
         """
         image = cv2.resize(image, (0, 0), fx=2, fy=2, interpolation=cv2.INTER_LINEAR)
-        # 假设已经对初始影像进行了 σ = 0.5 的高斯模糊
+        # 假设相机已经对初始影像进行了 σ = 0.5 的高斯模糊
         sigma_diff = np.sqrt(self.sigma0 ** 2 - assumed_blur ** 2)
         base_image = cv2.GaussianBlur(image, (0, 0), sigmaX=sigma_diff, sigmaY=sigma_diff)
         return base_image
@@ -221,11 +221,11 @@ class SIFT(object):
         gaussain_images = []
         for i in range(self.octave_n):
             gaussian_images_octave = [image]
-            # 不同尺度的高斯模糊
+            # 不同尺度的高斯模糊，第一层图像以及进行了 sigma0 的高斯模糊
             for sigma in gaussian_sigmas[1:]:
                 image = cv2.GaussianBlur(image, (0, 0), sigmaX=sigma, sigmaY=sigma)
                 gaussian_images_octave.append(image)
-            # 下一层，先降采样
+            # 保持尺度连续新，直接将上一组倒数第三层影像降采样作为基础影像，不需要模糊
             image = gaussian_images_octave[-3]
             image = cv2.resize(image, (image.shape[0] // 2, image.shape[1] // 2), interpolation=cv2.INTER_LINEAR)
             gaussain_images.append(np.asarray(gaussian_images_octave, np.float32))
@@ -319,7 +319,7 @@ class SIFT(object):
             # 最小二乘法求线性解，得到回归系数
             delta_xyz = - np.linalg.lstsq(center_hessian, center_gradient, rcond=None)[0]
             # 如果偏移量小于0.5, 则不需要调整位置，跳出循环
-            if (delta_xyz <= 0.5).all():
+            if (np.abs(delta_xyz) <= 0.5).all():
                 # 去除低对比度
                 # 重新计算响应值
                 contrast_vlaue = dog_image_octave[1, 1, 1] - 0.5 * np.dot(center_gradient, delta_xyz)
@@ -354,7 +354,93 @@ class SIFT(object):
                 break
         return None
 
-    def keypoints_detect_with_(self, dog_images, contrast_threshold=0.04, ):
+    def close_bin(self, angle, angle_unit, bin_size):
+        """
+        cal bin of pixel angle in cell
+        :return:
+        """
+        angle_unit = angle_unit
+        bin_size = bin_size
+        bin_idx = int(angle / angle_unit)
+        # 便于后续使用双线性插值,计算中间的角度值 0-angle_uint 之间
+        mod = angle % angle_unit
+        if bin_idx == bin_size:
+            return bin_idx - 1, bin_idx % bin_size, mod
+        return bin_idx, (bin_idx + 1) % bin_size, mod
+
+    def compute_kps_orientation(self, kps: cv2.KeyPoint, octave_index, bin_size, gaussian_image: np.ndarray,
+                                radius_factor=3,
+                                scale_factor=1.5, assist_ratio=0.8):
+        """
+        计算特征点主方向
+
+        :param assist_ratio: 选取的辅助方向占主方向的比值
+        :param bin_size: 直方图bin 数量
+        :param kps: 关键点
+        :param gaussian_image: 关键点所在的尺度图像
+        :param radius_factor: 邻域半径，对领域内的每个像素计算计算幅值和方向
+        :param octave_index: 金字塔索引
+        # :param num_bins: 直方图柱，45度为单元则为 8 个柱，36则为10个柱
+        # :param peak_ratio:
+        :param scale_factor:
+        :return:
+        """
+        # 尺度半径, 3*1.5*sigma ? 为何这样计算
+        image_shape = gaussian_image.shape
+        # ? 为什么要除掉
+        scale = scale_factor * kps.size / 2 ** (octave_index + 1)
+        radius = int(round(radius_factor * scale))
+        # 直方图分配权重
+        weight = -0.5 * scale ** 2
+        angle_unit = 360. / bin_size
+        gradient_histogram = np.zeros(bin_size)
+        smooth_histogram = np.zeros(bin_size)
+        # 计算外接矩形内每个像素的幅值和方向
+        for i in range(-radius, radius):
+            y = int(round(kps.pt[1] / float(2 ** octave_index))) + i
+            for j in range(-radius, radius):
+                x = int(round(kps.pt[1] / float(2 ** octave_index))) + j
+                if 0 < y < image_shape[0] - 1 and 0 < x < image_shape[1] - 1:
+                    dx = gaussian_image[y, x + 1] - gaussian_image[y, x - 1]
+                    dy = gaussian_image[y + 1, x] - gaussian_image[y - 1, x]
+                    # 高斯权重
+                    weight = 1 / (2 * np.pi * scale) * np.exp(weight * (i ** 2 + j ** 2))
+                    # 计算幅值和方向
+                    m = np.sqrt(dx ** 2 + dy ** 2)
+                    m = weight * m
+                    theta = np.rad2deg(np.arctan2(dy, dx))
+                    min_index, max_index, mod = self.close_bin(theta, angle_unit, bin_size)
+                    gradient_histogram[min_index] += m * (1 - mod / angle_unit)
+                    gradient_histogram[max_index] += m * mod / angle_unit
+
+        # 直方图平滑
+        for i in range(bin_size):
+            smooth_histogram[i] = (gradient_histogram[i - 2] + gradient_histogram[(i + 2) % bin_size] + 4 * (
+                (gradient_histogram[i - 1] + gradient_histogram[(i + 1) % bin_size])) + 6 * gradient_histogram[i]) / 16
+
+        # 主方向区间
+        orientation_main = max(smooth_histogram)
+        # 所有可能的辅区间
+        orientation_assists = np.where(np.logical_and(
+            smooth_histogram > np.roll(smooth_histogram, 1) and smooth_histogram > np.roll(smooth_histogram, -1)))
+
+        kps_with_orientation = []
+        for assist_index in orientation_assists:
+            his_value = smooth_histogram[assist_index]
+            if his_value >= 0.8 * orientation_main:
+                left_value = smooth_histogram[(assist_index - 1)]
+                right_value = smooth_histogram[(assist_index + 1) % bin_size]
+                # 插值获得所在索引
+                his_idx = (assist_index + 0.5 * (left_value - right_value) / (
+                        left_value + right_value - 2 * his_value)) % bin_size
+
+                orientation = 360. - his_idx * angle_unit  # ?
+                # 特征点可能有多个主方向
+                kps.angle = orientation
+                kps_with_orientation.append(kps)
+        return kps_with_orientation
+
+    def keypoints_detect_with_(self, dog_images, contrast_threshold=0.04):
         """
          关键点检测
         :return:
@@ -371,8 +457,10 @@ class SIFT(object):
                         # 判断是否为极值点
                         if self.is_extreme_pts(sub_image, contrast_threshold):
                             # 极值点定位
-                            kps, local_image_index = self.kps_location(i, j, o_index, s_index + 1, contrast_threshold,
-                                                                       do)
+                            kps, local_image_index = self.kps_location(i, j, o_index, s_index + 1,
+                                                                       contrast_threshold,
+                                                                       dog_images_octave)
+                            # 特征点描述
 
         pass
 
@@ -384,3 +472,8 @@ class SIFT(object):
             base_image = image
         gaussian_pyramid = self.gen_gaussian_pyramid(base_image)
         dog_images = self.gen_dog_image(gaussian_pyramid)
+
+    def sift_cv(self, data):
+        sift = cv2.SIFT_create()
+        kps, des = sift.detectAndCompute(data, None)
+        print(len(des))

@@ -39,17 +39,7 @@ class TestRegistration:
         ssd_match_agent = Matcher(method="ssd")
         match_value, match_pts = ssd_match_agent.match(temp_pixel_feature, dst_pixel_feature)
 
+
     def test_sift(self):
         sift_agent = SIFT()
-        sift_agent.compute_keypts_des(self.temp_img_gray)
-
-    def test_ss(self):
-        print(for_i(6))
-
-
-def for_i(j):
-    for i in range(10):
-        print(i)
-        if i == j:
-            return i
-    return None
+        sift_agent.sift_cv(self.temp_img_gray)
