@@ -8,6 +8,7 @@ import sys
 import cv2
 import matplotlib.pyplot as plt
 import numpy as np
+from skimage.feature import match_template
 
 from utils import *
 
@@ -105,5 +106,10 @@ class Matcher(object):
         :return:
         """
         return np.sum(np.abs(template - dst))
+
+
+
+
+
 
 
