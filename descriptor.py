@@ -120,7 +120,7 @@ class HOG(object):
         return np.asarray(hog_vector, np.float32), hog_image
 
 
-class CFOG(object):
+c  lass CFOG(object):
     def __init__(self, bin_size=9, k_size=3):
         self.bin_size = bin_size
         self.angle_uint = 180 // self.bin_size
